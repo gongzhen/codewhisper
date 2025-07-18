@@ -47,7 +47,7 @@ CodeWhisper is an AI-powered project designed to assist developers in generating
 
 Here's a look at the CodeWhisper interface in action:
 
-![A screenshot of the CodeWhisper application interface](https://i.imgur.com/8V1iA8h.png)
+![A screenshot of the CodeWhisper application interface](./assets/screenshot1.png)
 
 ---
 
