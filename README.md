@@ -31,10 +31,10 @@ CodeWhisper is an AI-powered project designed to assist developers in generating
 
 ## ✨ Features
 
-- **Code Generation:** Create functions, classes, and scripts from natural language prompts.
-- **Code Modification & Refactoring:** Intelligently refactor or add features to existing code blocks.
-- **Intelligent Suggestions:** Receive suggestions for improving code quality, performance, and readability.
-- **Multi-Language Support:** Works with popular languages like Python, JavaScript, Java, and more.
+- **AI-Powered Code Intelligence:** Understand your codebase and get help with generation, refactoring, and debugging—all powered by top AI models like OpenAI (GPT-4), Claude, Gemini, and DeepSeek.
+- **Smart File Context:** Load selected files or entire directories into context with a visual tree view that shows token usage. Automatically respects .gitignore and supports custom exclusions.
+- **Responsive Chat Interface:** Get real-time AI replies through server-sent events (SSE). Conversations persist locally so you can pick up right where you left off. Includes full syntax highlighting for code.
+- **Rich Markdown & Visual Output:** View AI responses with styled markdown, tables, lists, and code blocks. Generate charts and diagrams with D3.js or Graphviz. Export or import chat logs as JSON.
 
 ## 📸 Screenshot
 
