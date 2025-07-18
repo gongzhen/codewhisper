@@ -1,0 +1,9 @@
+export interface D3RenderPlugin {
+    name: string;
+    priority?: number;
+    canHandle: (spec: any) => boolean;
+    render: (container: HTMLElement, d3: any, spec: any) => void;
+}
+     canHandle: (spec: any) => boolean;
+     render: (container: HTMLElement, d3: any, spec: any) => void;
+ }
