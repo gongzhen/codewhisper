@@ -29,7 +29,7 @@ func CountTokens(text string) int {
             }
         }
     }
-    
+     
     // Approximate tokens as 0.75 * word count (rough approximation)
     // tiktoken typically produces more tokens than word count
     return int(float64(wordCount) * 0.75)

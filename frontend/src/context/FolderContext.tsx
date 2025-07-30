@@ -14,6 +14,8 @@ interface FolderContextType {
   expandedKeys: React.Key[];
   setExpandedKeys: React.Dispatch<React.SetStateAction<React.Key[]>>;
   getFolderTokenCount: (path: string, folderData: Folders) => number;
+  selectedKeys: React.Key[];
+  setSelectedKeys: React.Dispatch<React.SetStateAction<React.Key[]>>;
 }
 
 const FolderContext = createContext<FolderContextType | undefined>(undefined);
@@ -30,6 +32,8 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const saved = localStorage.getItem('CODEWHISPER_EXPANDED_FOLDERS');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
 
   const getFolderTokenCount = (path: string, folderData: Folders): number => {
  
@@ -60,6 +64,11 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return totalTokens;
   };
 
+
+  useEffect(() => {
+    console.log("Context selectedKeys changed to", selectedKeys);
+  }, [selectedKeys]);
+
   // Save expanded folders whenever they change
   useEffect(() => {
     localStorage.setItem('CODEWHISPER_EXPANDED_FOLDERS', JSON.stringify(expandedKeys));
@@ -74,7 +83,7 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const fetchFolders = async () => {
       try {
         const response = await fetch('/api/folders');
-	if (!response.ok) {
+	      if (!response.ok) {
           throw new Error(`Failed to fetch folders: ${response.status}`);
         }
         const data = await response.json();
@@ -110,7 +119,7 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setCheckedKeys(prev => {
           const currentChecked = new Set(prev as string[]);
 
-	  // Get the parent directory of any checked directory
+	        // Get the parent directory of any checked directory
           const getParentDir = (path: string) => {
             const parts = path.split('/');
             return parts.slice(0, -1).join('/');
@@ -132,7 +141,7 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             removed: [...currentChecked].filter(k => !newChecked.has(k))
           });
 
-	  // Debug log for D3 files
+	        // Debug log for D3 files
           const d3Files = [...newChecked].filter(k => k.includes('D3') || k.includes('Debug.tsx'));
           if (d3Files.length > 0) {
             console.log('D3 files in checked keys:', d3Files);
@@ -159,7 +168,9 @@ export const FolderProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       searchValue,
       setSearchValue,
       expandedKeys,
-      setExpandedKeys
+      setExpandedKeys,
+      selectedKeys,
+      setSelectedKeys
     }}>
       {children}
     </FolderContext.Provider>

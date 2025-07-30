@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, Suspense } from 'react';
 import {FolderTree} from "./FolderTree";
 import {SendChatContainer} from "./SendChatContainer";
 import {StreamedContent} from './StreamedContent';
-import {Button, Tooltip, ConfigProvider, theme, message } from "antd";
+import {Button, Tooltip, ConfigProvider, theme, message, Spin } from "antd";
 import {
     MenuFoldOutlined,
     ExperimentOutlined,
@@ -14,9 +14,11 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { DebugControls } from './DebugControls';
 import { useChatContext } from '../context/ChatContext';
+import { useFolderContext } from '../context/FolderContext'; // Import this context
 
 // Lazy load the Conversation component
 const Conversation = React.lazy(() => import("./Conversation"));
+const CodeViewer = React.lazy(() => import("./CodeViewer")); // Import this
 const PrismTest = React.lazy(() => import("./PrismTest"));
 const SyntaxTest = React.lazy(() => import("./SyntaxTest"));
 const ApplyDiffTest = React.lazy(() => import("./ApplyDiffTest"));
@@ -57,6 +59,7 @@ const PANEL_COLLAPSED_KEY = 'CODEWHISPER_PANEL_COLLAPSED';
 
 export const App = () => {
     const {streamedContentMap, currentMessages, startNewChat, isTopToBottom, setIsTopToBottom, setStreamedContentMap} = useChatContext();
+    const { selectedKeys } = useFolderContext(); // Get selectedKeys from context
     const enableCodeApply = window.enableCodeApply === 'true';
     const [isPanelCollapsed, setIsPanelCollapsed] = useState(() => {
         const saved = localStorage.getItem(PANEL_COLLAPSED_KEY);
@@ -167,6 +170,9 @@ export const App = () => {
 
     const { isDarkMode, toggleTheme, themeAlgorithm } = useTheme();
 
+    // Determine if a single file is selected
+    const isFileSelected = selectedKeys && selectedKeys.length === 1;
+
     const chatContainerContent = isTopToBottom ? (
         <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
             <div style={{ flex: 1, overflow: 'auto', width: '100%',
@@ -246,9 +252,45 @@ export const App = () => {
                 <FolderTree isPanelCollapsed={isPanelCollapsed}/>
                 <div className="chat-container">
 		    <div className="chat-content-stabilizer">
-		        {chatContainerContent}
+                {/* --- FIXED: 上下布局 - 可调整大小的分隔 --- */}
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    {/* 上部：文件查看器（如果有选中文件） */}
+                    {isFileSelected && (
+                        <div style={{ 
+                            minHeight: '200px',
+                            maxHeight: '70%',
+                            height: '50%', // 默认50%
+                            borderBottom: `1px solid ${isDarkMode ? '#303030' : '#e8e8e8'}`,
+                            marginBottom: '16px',
+                            overflow: 'auto',
+                            resize: 'vertical', // 允许垂直调整大小
+                            position: 'relative'
+                        }}>
+                            <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}><Spin size="large" /></div>}>
+                                <CodeViewer />
+                            </Suspense>
+                            {/* 调整大小的提示 */}
+                            <div style={{
+                                position: 'absolute',
+                                bottom: 0,
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                width: '50px',
+                                height: '4px',
+                                background: isDarkMode ? '#555' : '#ccc',
+                                borderRadius: '2px',
+                                cursor: 'ns-resize'
+                            }} />
+                        </div>
+                    )}
+                    
+                    {/* 下部：聊天区域（始终显示） */}
+                    <div style={{ flex: 1, minHeight: '300px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        {chatContainerContent}
                     </div>
                 </div>
+                </div>
+              </div>
             </div>
         </ConfigProvider>
 	</ExtensionErrorBoundary>

@@ -84,6 +84,9 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/model-settings", s.handleModelSettings).Methods("GET", "POST")
 	api.HandleFunc("/model-capabilities", s.handleModelCapabilities).Methods("GET")
 
+    // ▼▼▼ ADD THIS NEW ROUTE HERE ▼▼▼
+    api.HandleFunc("/file-content", s.handleGetFileContent).Methods("GET")	
+
 	// Streaming endpoints (critical for chat)
 	s.router.HandleFunc("/codewhisper/stream", s.handleStreamChatLog).Methods("POST")
 	s.router.HandleFunc("/codewhisper/stream_log", s.handleStreamChatLog).Methods("POST")
@@ -133,6 +136,44 @@ type ErrorResponse struct {
 }
 
 // Handlers
+// in internal/server/server.go
+
+func (s *Server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
+    filePath := r.URL.Query().Get("path")
+    utils.Log.Info("Received request for file content with path: %s", filePath) // Log received path
+
+    if filePath == "" {
+        utils.Log.Error("File path parameter is missing")
+        http.Error(w, "File path is required", http.StatusBadRequest)
+        return
+    }
+
+    targetDir := config.GetEnv(config.EnvUserCodebaseDir, ".")
+    fullPath := filepath.Join(targetDir, filePath)
+
+    absTargetDir, _ := filepath.Abs(targetDir)
+	utils.Log.Info("absTargetDir: %s", absTargetDir) // Log absolute path
+	utils.Log.Info("Full file path resolved to: %s", fullPath) // Log resolved path	
+    utils.Log.Info("Attempting to read file at absolute path: %s", targetDir) // Log absolute path
+		
+    if !strings.HasPrefix(fullPath, absTargetDir) {
+        utils.Log.Warning("Access denied for path: %s (not in target dir: %s)", fullPath, absTargetDir)
+        http.Error(w, "Access denied", http.StatusForbidden)
+        return
+    }
+
+    content, err := os.ReadFile(fullPath)
+    if err != nil {
+        utils.Log.Error("Failed to read file %s: %v", fullPath, err) // Log file read error
+        http.Error(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusInternalServerError)
+        return
+    }
+
+    utils.Log.Info("Successfully read %d bytes from %s", len(content), fullPath) // Log success and content length
+
+    w.Header().Set("Content-Type", "text/plain")
+    w.Write(content)
+}
 
 // Add this handler method
 func (s *Server) handleTestSSE(w http.ResponseWriter, r *http.Request) {
