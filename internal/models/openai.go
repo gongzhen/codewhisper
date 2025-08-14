@@ -47,8 +47,16 @@ func NewOpenAIProvider() (*OpenAIProvider, error) {
     }
     
     utils.Log.Info("Using OpenAI model: %s", modelID)
-    
-    client := openai.NewClient(apiKey)
+    var client *openai.Client
+    apiBase := os.Getenv("OPENAI_API_BASE")
+    if apiBase != "" {
+        utils.Log.Info("Using custom API base: %s", apiBase)
+        config := openai.DefaultConfig(apiKey)
+        config.BaseURL = apiBase
+        client = openai.NewClientWithConfig(config)
+    } else {
+        client = openai.NewClient(apiKey)
+    }
     
     return &OpenAIProvider{
         client:  client,
@@ -69,6 +77,24 @@ func (o *OpenAIProvider) StreamChat(ctx context.Context, prompt string) (<-chan 
         
         // Parse the prompt to extract system message
         messages := o.parsePrompt(prompt)
+
+        // EXTRA SAFETY: Filter out any empty messages before sending
+        var validMessages []openai.ChatCompletionMessage
+        for _, msg := range messages {
+            if strings.TrimSpace(msg.Content) != "" {
+                validMessages = append(validMessages, msg)
+            } else {
+                utils.Log.Warning("Removing empty %s message before API call", msg.Role)
+            }
+        }
+        messages = validMessages
+
+        // Make sure we have at least one message
+        if len(messages) == 0 {
+            utils.Log.Error("No valid messages after filtering")
+            streamChan <- StreamChunk{Error: fmt.Errorf("no valid messages to send")}
+            return
+        }        
         
         // Log the parsed messages for debugging
         utils.Log.Info("Parsed %d messages for OpenAI", len(messages))
@@ -98,6 +124,21 @@ func (o *OpenAIProvider) StreamChat(ctx context.Context, prompt string) (<-chan 
         utils.Log.Info("Creating OpenAI stream with model: %s, temperature: %.2f, maxTokens: %d", 
             o.modelID, temperature, maxTokens)
         
+
+        // In StreamChat function, right before CreateChatCompletionStream
+        utils.Log.Info("=== DEBUG: Sending request to API ===")
+        utils.Log.Info("Model: %s", req.Model)
+        utils.Log.Info("Number of messages: %d", len(req.Messages))
+        for i, msg := range req.Messages {
+            utils.Log.Info("Message %d:", i)
+            utils.Log.Info("  Role: %s", msg.Role)
+            utils.Log.Info("  Content length: %d", len(msg.Content))
+            utils.Log.Info("  Content preview: %.100s...", msg.Content) // First 100 chars
+            if msg.Content == "" {
+                utils.Log.Error("  WARNING: Empty content in message!")
+            }
+        }
+        utils.Log.Info("=== END DEBUG ===")            
         // Create stream
         stream, err := o.client.CreateChatCompletionStream(ctx, req)
         if err != nil {
@@ -183,25 +224,59 @@ func (o *OpenAIProvider) parsePrompt(prompt string) []openai.ChatCompletionMessa
                         if strings.Contains(part, "\nAssistant: ") {
                             humanAssistant := strings.SplitN(part, "\nAssistant: ", 2)
                             if len(humanAssistant) == 2 {
-                                // Skip the closing Assistant: prompt at the end
-                                if !strings.HasSuffix(humanAssistant[1], "Assistant: ") {
+                                humanContent := strings.TrimSpace(humanAssistant[0])
+                                assistantContent := strings.TrimSpace(humanAssistant[1])
+
+                                // Add human message if not empty
+                                if humanContent != "" && humanContent != "Human:" {
                                     messages = append(messages, 
                                         openai.ChatCompletionMessage{
                                             Role:    openai.ChatMessageRoleUser,
-                                            Content: strings.TrimSpace(humanAssistant[0]),
-                                        },
-                                        openai.ChatCompletionMessage{
-                                            Role:    openai.ChatMessageRoleAssistant,
-                                            Content: strings.TrimSpace(humanAssistant[1]),
+                                            Content: humanContent,
                                         },
                                     )
-                                } else {
-                                    // This is the current question
-                                    messages = append(messages, openai.ChatCompletionMessage{
-                                        Role:    openai.ChatMessageRoleUser,
-                                        Content: strings.TrimSpace(humanAssistant[0]),
-                                    })
                                 }
+                                
+                                // IMPORTANT: Only add assistant message if it has real content
+                                // Skip if it's empty, just "Assistant:", or ends with "Assistant:"
+                                if assistantContent != "" && 
+                                   assistantContent != "Assistant:" &&
+                                   !strings.HasSuffix(assistantContent, "Assistant:") {
+                                    messages = append(messages, 
+                                        openai.ChatCompletionMessage{
+                                            Role:    openai.ChatMessageRoleAssistant,
+                                            Content: assistantContent,
+                                        },
+                                    )
+                                }                                
+
+                                // // Skip the closing Assistant: prompt at the end
+                                // if !strings.HasSuffix(humanAssistant[1], "Assistant: ") {
+                                //     messages = append(messages, 
+                                //         openai.ChatCompletionMessage{
+                                //             Role:    openai.ChatMessageRoleUser,
+                                //             Content: strings.TrimSpace(humanAssistant[0]),
+                                //         },
+                                //         openai.ChatCompletionMessage{
+                                //             Role:    openai.ChatMessageRoleAssistant,
+                                //             Content: strings.TrimSpace(humanAssistant[1]),
+                                //         },
+                                //     )
+                                // } else {
+                                //     // This is the current question
+                                //     messages = append(messages, openai.ChatCompletionMessage{
+                                //         Role:    openai.ChatMessageRoleUser,
+                                //         Content: strings.TrimSpace(humanAssistant[0]),
+                                //     })
+                                // }
+                            }
+                        } else {
+                            content := strings.TrimSpace(part)
+                            if content != "" && content != "Human:" {
+                                messages = append(messages, openai.ChatCompletionMessage{
+                                    Role:    openai.ChatMessageRoleUser,
+                                    Content: content,
+                                })                                
                             }
                         }
                     }
@@ -210,10 +285,14 @@ func (o *OpenAIProvider) parsePrompt(prompt string) []openai.ChatCompletionMessa
                     if strings.Contains(rest, "\nHuman: ") {
                         parts := strings.SplitN(rest, "\nHuman: ", 2)
                         if len(parts) == 2 {
-                            messages = append(messages, openai.ChatCompletionMessage{
-                                Role:    openai.ChatMessageRoleUser,
-                                Content: "Current codebase:" + parts[0] + "\n\n" + strings.TrimSuffix(parts[1], "\nAssistant: "),
-                            })
+                            content := strings.TrimSuffix(parts[1], "\nAssistant: ")
+                            content = strings.TrimSpace(content)
+                            if content != "" {
+                                messages = append(messages, openai.ChatCompletionMessage{
+                                    Role:    openai.ChatMessageRoleUser,
+                                    Content: "Current codebase:" + parts[0] + "\n\n" + content,
+                                })
+                            }
                         }
                     }
                 }
@@ -222,9 +301,11 @@ func (o *OpenAIProvider) parsePrompt(prompt string) []openai.ChatCompletionMessa
                 if strings.Contains(rest, "\nHuman: ") {
                     parts := strings.SplitN(rest, "\nHuman: ", 2)
                     if len(parts) == 2 {
+                        content := strings.TrimSuffix(parts[1], "\nAssistant: ")
+                        content = strings.TrimSpace(content)
                         messages = append(messages, openai.ChatCompletionMessage{
                             Role:    openai.ChatMessageRoleUser,
-                            Content: "Current codebase:" + parts[0] + "\n\n" + strings.TrimSuffix(parts[1], "\nAssistant: "),
+                            Content: "Current codebase:" + parts[0] + "\n\n" + content,
                         })
                     }
                 }
@@ -237,8 +318,18 @@ func (o *OpenAIProvider) parsePrompt(prompt string) []openai.ChatCompletionMessa
             Content: prompt,
         })
     }
+
+    // SAFETY NET: Filter out any empty messages that might have slipped through
+    var filteredMessages []openai.ChatCompletionMessage
+    for _, msg := range messages {
+        if strings.TrimSpace(msg.Content) != "" {
+            filteredMessages = append(filteredMessages, msg)
+        } else {
+            utils.Log.Warning("Filtering out empty %s message in parsePrompt", msg.Role);
+        }
+    }
     
-    return messages
+    return filteredMessages
 }
 
 // ValidateAuth validates OpenAI API key
